@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mule Flow Visualizer — Trace, Diagram, and Cost Every Branch of Your MuleSoft Flows</title>
+<meta name="description" content="A single-file, zero-backend tool that turns raw MuleSoft XML into interactive diagrams, request traces, error coverage maps, and per-branch cost estimates.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy-deep:#0e2a47;
+  --navy-mid:#153a5f;
+  --navy-line:#3f5f80;
+  --grid-line:rgba(127,163,196,0.16);
+  --paper:#edebe4;
+  --paper-white:#f7f6f1;
+  --ink:#16232f;
+  --ink-soft:#3f4d59;
+  --amber:#f2a93b;
+  --trace:#7fe7c4;
+  --trace-dim:#4b9e88;
+  --red:#e2645a;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:'IBM Plex Sans',sans-serif;
+  background:var(--navy-deep);
+  color:var(--paper-white);
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:0.001ms !important;animation-iteration-count:1 !important;transition-duration:0.001ms !important;}
+}
+
+/* ===== blueprint grid backdrop ===== */
+.blueprint{
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size:34px 34px;
+}
+
+/* ===== typography ===== */
+h1,h2,h3,.mono{font-family:'IBM Plex Mono',monospace;}
+.eyebrow{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--trace);
+}
+.section-title{
+  font-size:clamp(24px,3.4vw,36px);
+  font-weight:700;
+  color:var(--paper-white);
+  letter-spacing:-.01em;
+  line-height:1.2;
+}
+.section-title .dim{color:var(--navy-line)}
+p{color:#c3d2de}
+.paper p{color:var(--ink-soft)}
+.paper{color:var(--ink)}
+
+/* ===== layout shell ===== */
+.wrap{max-width:900px;margin:0 auto;padding:0 28px}
+.spine{
+  position:relative;
+}
+.spine::before{
+  content:"";
+  position:absolute;
+  left:50%;
+  top:0;
+  bottom:0;
+  width:2px;
+  background:repeating-linear-gradient(var(--navy-line) 0 6px, transparent 6px 12px);
+  transform:translateX(-50%);
+  z-index:0;
+}
+@media (max-width:760px){ .spine::before{ left:20px; } }
+
+.node{
+  width:34px;height:34px;
+  border-radius:50%;
+  border:2px solid var(--trace);
+  background:var(--navy-deep);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:12px;font-weight:700;
+  color:var(--trace);
+  position:relative;z-index:1;
+  margin:0 auto 18px;
+  box-shadow:0 0 0 6px var(--navy-deep);
+}
+@media (max-width:760px){ .node{margin:0 0 18px 4px} }
+
+/* ===== header / hero ===== */
+header.hero{
+  padding:70px 0 40px;
+  border-bottom:1px solid var(--navy-mid);
+}
+.hero-kicker{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.hero-kicker .dot{width:8px;height:8px;border-radius:50%;background:var(--trace);box-shadow:0 0 10px var(--trace)}
+h1.title{
+  font-size:clamp(32px,6vw,58px);
+  font-weight:700;
+  line-height:1.05;
+  letter-spacing:-0.02em;
+  max-width:16ch;
+}
+h1.title .accent{color:var(--amber)}
+.hero-sub{
+  margin-top:20px;
+  max-width:56ch;
+  font-size:17px;
+  color:#c3d2de;
+}
+.hero-meta{
+  margin-top:28px;
+  display:flex;gap:22px;flex-wrap:wrap;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:12px;
+  color:var(--trace-dim);
+}
+.hero-meta span{border:1px solid var(--navy-line);padding:5px 10px;border-radius:3px;color:#bcd6ec}
+
+/* ===== hero diagram ===== */
+.hero-diagram{margin-top:46px}
+.hero-diagram svg{width:100%;height:auto;display:block}
+.flow-pulse{
+  stroke-dasharray:6 10;
+  animation:dash 3.2s linear infinite;
+}
+@keyframes dash{ to{ stroke-dashoffset:-160; } }
+.diag-label{font-family:'IBM Plex Mono',monospace;font-size:11px;fill:#9fc2dc}
+.diag-node-fill{fill:var(--navy-mid);stroke:var(--navy-line)}
+.diag-node-active{fill:var(--navy-mid);stroke:var(--trace)}
+
+/* ===== sections ===== */
+section{padding:64px 0}
+.lede{
+  font-size:18px;
+  max-width:60ch;
+  margin-top:16px;
+}
+
+/* paper card for feature nodes */
+.card{
+  background:var(--paper);
+  color:var(--ink);
+  border-radius:6px;
+  padding:26px 28px;
+  margin:0 auto;
+  max-width:640px;
+  position:relative;
+  border:1px solid #d8d5c9;
+}
+.card::before{
+  content:attr(data-tag);
+  position:absolute;
+  top:-11px;left:20px;
+  background:var(--amber);
+  color:#2c1c00;
+  font-family:'IBM Plex Mono',monospace;
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  padding:3px 9px;
+  border-radius:3px;
+}
+.card h3{font-size:19px;font-weight:700;margin-bottom:10px;color:var(--ink)}
+.card p{margin-top:6px}
+.card ul{margin:12px 0 0 18px;color:var(--ink-soft)}
+.card li{margin-bottom:6px}
+.card code, .inline-code{
+  font-family:'IBM Plex Mono',monospace;
+  background:#dedbcd;
+  color:#2c1c00;
+  padding:1px 6px;
+  border-radius:3px;
+  font-size:0.88em;
+}
+.card-row{margin-bottom:64px}
+.card-row:last-child{margin-bottom:0}
+
+/* two-up grid for smaller feature notes */
+.mini-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:16px;
+  max-width:640px;
+  margin:0 auto;
+}
+@media (max-width:600px){ .mini-grid{grid-template-columns:1fr} }
+.mini{
+  background:var(--navy-mid);
+  border:1px solid var(--navy-line);
+  border-radius:6px;
+  padding:18px 20px;
+}
+.mini .mono-label{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--trace);letter-spacing:.06em;text-transform:uppercase}
+.mini p{margin-top:8px;font-size:14px;color:#c3d2de}
+
+/* callouts */
+.callout{
+  max-width:640px;margin:0 auto;
+  border-left:3px solid var(--red);
+  background:rgba(226,100,90,0.08);
+  padding:14px 18px;
+  border-radius:0 4px 4px 0;
+  font-size:14px;
+  color:#f3c9c5;
+}
+.callout b{color:var(--red)}
+.callout-good{border-left-color:var(--trace);background:rgba(127,231,196,0.08);color:#cdeee2}
+.callout-good b{color:var(--trace)}
+
+/* how-to steps */
+.steps{max-width:640px;margin:0 auto;counter-reset:step}
+.step{
+  display:grid;grid-template-columns:44px 1fr;gap:16px;
+  padding:16px 0;
+  border-bottom:1px solid var(--navy-mid);
+}
+.step:last-child{border-bottom:none}
+.step-num{
+  font-family:'IBM Plex Mono',monospace;
+  font-weight:700;color:var(--navy-deep);
+  background:var(--trace);
+  width:32px;height:32px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;
+}
+.step h4{font-size:15px;color:var(--paper-white);margin-bottom:4px}
+.step p{font-size:14px;color:#a9bccb}
+
+/* table */
+.table-wrap{max-width:640px;margin:0 auto;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{
+  font-family:'IBM Plex Mono',monospace;
+  text-align:left;
+  color:var(--trace);
+  font-size:11px;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  padding:8px 10px;
+  border-bottom:1px solid var(--navy-line);
+}
+td{padding:9px 10px;border-bottom:1px solid var(--navy-mid);color:#c3d2de}
+tr:last-child td{border-bottom:none}
+td.mono-cell{font-family:'IBM Plex Mono',monospace;color:var(--amber);font-size:12px}
+
+/* privacy strip */
+.privacy-strip{
+  max-width:640px;margin:0 auto;
+  display:flex;align-items:flex-start;gap:14px;
+  background:var(--navy-mid);
+  border:1px dashed var(--navy-line);
+  border-radius:6px;
+  padding:18px 20px;
+}
+.privacy-strip .icon{font-size:20px;line-height:1}
+
+/* footer / cta */
+footer{
+  border-top:1px solid var(--navy-mid);
+  padding:56px 0 70px;
+  text-align:center;
+}
+footer .section-title{font-size:clamp(22px,4vw,32px)}
+footer p{max-width:52ch;margin:14px auto 0;color:#a9bccb}
+.footer-tags{
+  margin-top:26px;
+  display:flex;justify-content:center;gap:10px;flex-wrap:wrap;
+}
+.footer-tags span{
+  font-family:'IBM Plex Mono',monospace;
+  font-size:11px;color:var(--trace-dim);
+  border:1px solid var(--navy-line);
+  padding:5px 11px;border-radius:20px;
+}
+.byline{margin-top:34px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#5c7488;letter-spacing:.05em}
+
+/* headroom for section headers within spine */
+.sec-head{max-width:640px;margin:0 auto 34px;text-align:center}
+.sec-head .eyebrow{display:block;margin-bottom:10px}
+
+::selection{background:var(--trace);color:var(--navy-deep)}
+</style>
+</head>
+<body>
+
+<div class="blueprint">
+
+<header class="hero wrap">
+  <div class="hero-kicker"><span class="dot"></span><span class="eyebrow">Internal Tooling / MuleSoft</span></div>
+  <h1 class="title">Stop reading raw XML to understand your own <span class="accent">Mule flows.</span></h1>
+  <p class="hero-sub">Mule Flow Visualizer turns a folder of MuleSoft XML into an interactive diagram, a request tracer, an error-coverage map, and a branch-level cost calculator — all in a single HTML file that runs entirely in your browser.</p>
+  <div class="hero-meta">
+    <span>Zero backend</span>
+    <span>Single HTML file</span>
+    <span>Nothing leaves the browser</span>
+    <span>Drop XML → go</span>
+  </div>
+
+  <div class="hero-diagram">
+    <svg viewBox="0 0 760 190" xmlns="http://www.w3.org/2000/svg">
+      <!-- connectors -->
+      <path d="M60 95 H160" stroke="#3f5f80" stroke-width="2" fill="none"/>
+      <path class="flow-pulse" d="M60 95 H160" stroke="#7fe7c4" stroke-width="2" fill="none"/>
+      <path d="M230 95 H300 M300 95 V50 H370 M300 95 V140 H370" stroke="#3f5f80" stroke-width="2" fill="none"/>
+      <path class="flow-pulse" d="M230 95 H300 M300 95 V50 H370 M300 95 V140 H370" stroke="#7fe7c4" stroke-width="2" fill="none"/>
+      <path d="M440 50 H500 V95 H560 M440 140 H500 V95" stroke="#3f5f80" stroke-width="2" fill="none"/>
+      <path class="flow-pulse" d="M440 50 H500 V95 H560 M440 140 H500 V95" stroke="#7fe7c4" stroke-width="2" fill="none"/>
+      <path d="M630 95 H700" stroke="#3f5f80" stroke-width="2" fill="none"/>
+      <path class="flow-pulse" d="M630 95 H700" stroke="#7fe7c4" stroke-width="2" fill="none"/>
+
+      <!-- listener node -->
+      <rect x="10" y="75" width="50" height="40" rx="6" class="diag-node-active" stroke-width="2"/>
+      <text x="35" y="99" text-anchor="middle" class="diag-label" font-size="9">HTTP</text>
+      <text x="35" y="130" text-anchor="middle" class="diag-label">GET /orders</text>
+
+      <!-- choice node -->
+      <rect x="160" y="75" width="70" height="40" rx="6" class="diag-node-fill" stroke-width="2"/>
+      <text x="195" y="99" text-anchor="middle" class="diag-label" font-size="9">choice</text>
+      <text x="195" y="130" text-anchor="middle" class="diag-label">3 branches</text>
+
+      <!-- branch a -->
+      <rect x="370" y="30" width="70" height="40" rx="6" class="diag-node-fill" stroke-width="2"/>
+      <text x="405" y="54" text-anchor="middle" class="diag-label" font-size="9">DataWeave</text>
+      <!-- branch b -->
+      <rect x="370" y="120" width="70" height="40" rx="6" class="diag-node-fill" stroke-width="2"/>
+      <text x="405" y="144" text-anchor="middle" class="diag-label" font-size="9">flow-ref</text>
+
+      <!-- merge -->
+      <rect x="560" y="75" width="70" height="40" rx="6" class="diag-node-active" stroke-width="2"/>
+      <text x="595" y="99" text-anchor="middle" class="diag-label" font-size="9">response</text>
+      <text x="595" y="130" text-anchor="middle" class="diag-label">200 OK</text>
+
+      <!-- terminal -->
+      <circle cx="715" cy="95" r="7" class="diag-node-active" stroke-width="2"/>
+    </svg>
+  </div>
+</header>
+
+<main class="spine">
+
+  <!-- WHY -->
+  <section class="wrap">
+    <div class="node">01</div>
+    <div class="sec-head">
+      <span class="eyebrow">The problem</span>
+      <h2 class="section-title">Flow logic lives in XML. Understanding lives in someone's head.</h2>
+      <p class="lede" style="margin-left:auto;margin-right:auto">Any MuleSoft engineer who has inherited an integration knows the routine: open the XML, mentally stack the <span class="inline-code">&lt;choice&gt;</span> blocks, trace a <span class="inline-code">&lt;flow-ref&gt;</span> into another file, lose your place, and start again. The logic is all there — it's just not readable at a glance.</p>
+    </div>
+    <div class="card" data-tag="Why it exists">
+      <h3>Built for the moment you're handed someone else's project</h3>
+      <p>Mule Flow Visualizer was built to answer four questions fast, without spinning up Anypoint Studio or exporting anything to a diagramming tool:</p>
+      <ul>
+        <li>What does this flow actually do, end to end?</li>
+        <li>Which flow would handle <em>this specific</em> incoming request?</li>
+        <li>If this error type fires, does anything actually catch it?</li>
+        <li>Which branch is expensive, which one is dead code, and what would it cost at real traffic volumes?</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- DIAGRAMMING -->
+  <section class="wrap">
+    <div class="node">02</div>
+    <div class="sec-head">
+      <span class="eyebrow">Core capability</span>
+      <h2 class="section-title">Interactive flow diagrams, straight from your XML</h2>
+      <p class="lede" style="margin-left:auto;margin-right:auto">Load one or many <span class="inline-code">.xml</span> files and every <span class="inline-code">&lt;flow&gt;</span> and <span class="inline-code">&lt;sub-flow&gt;</span> is parsed into a tree the tool can render, search, and navigate.</p>
+    </div>
+
+    <div class="card-row">
+      <div class="card" data-tag="Rendering">
+        <h3>A readable diagram for every flow</h3>
+        <p>Choice routers, scatter-gather, try scopes, foreach, async, and error handlers all render as their own distinct node shapes, so the branching structure is visible instead of buried in indentation.</p>
+        <p>Sections collapse and expand individually, or all at once, so a 400-line flow can be skimmed at the top level and drilled into only where it matters.</p>
+      </div>
+    </div>
+
+    <div class="mini-grid">
+      <div class="mini"><span class="mono-label">Flow-ref navigation</span><p>Click a flow-ref node and jump straight into the referenced flow, wherever it lives across your loaded files.</p></div>
+      <div class="mini"><span class="mono-label">Dependency graph</span><p>A separate map view shows which flows call which, and lets you find every caller of a given flow instantly.</p></div>
+      <div class="mini"><span class="mono-label">In-diagram search</span><p>Search across the rendered diagram with next/previous match jumping, auto-expanding any collapsed parents.</p></div>
+      <div class="mini"><span class="mono-label">SVG export</span><p>Export the current diagram as a clean SVG — for documentation, a design review, or a wiki page.</p></div>
+    </div>
+  </section>
+
+  <!-- REQUEST TRACING -->
+  <section class="wrap">
+    <div class="node">03</div>
+    <div class="sec-head">
+      <span class="eyebrow">Core capability</span>
+      <h2 class="section-title">Paste a request, get the exact execution path</h2>
+      <p class="lede" style="margin-left:auto;margin-right:auto">Instead of guessing which flow handles an incoming call, paste the raw request and let the tool match it for you.</p>
+    </div>
+    <div class="card" data-tag="How it works">
+      <h3>cURL or raw HTTP in, matched flow out</h3>
+      <p>Paste a <span class="inline-code">curl</span> command or a raw HTTP request block. It's parsed for method, path, headers, and body, then scored against every HTTP listener path across your loaded flows to find the best match — including path parameters like <span class="inline-code">/orders/{id}</span>.</p>
+      <ul>
+        <li><b>Step-through debugger:</b> once matched, walk the flow processor by processor with Next / Prev / Stop controls.</li>
+        <li><b>Variable inspector:</b> see Mule variables as they're set, updated, or removed at each step of the trace.</li>
+        <li><b>Basic expression evaluation:</b> simple <span class="inline-code">#[...]</span> DataWeave-style expressions are evaluated against the request context so you can see resolved values, not just the raw expression.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ERROR ANALYSIS -->
+  <section class="wrap">
+    <div class="node">04</div>
+    <div class="sec-head">
+      <span class="eyebrow">Core capability</span>
+      <h2 class="section-title">Know your error coverage before production does</h2>
+      <p class="lede" style="margin-left:auto;margin-right:auto">Error handling in Mule is scoped and inherited in ways that are easy to get subtly wrong. This view makes the gaps visible.</p>
+    </div>
+    <div class="card-row">
+      <div class="card" data-tag="Full coverage view">
+        <h3>Every processor, mapped to its error handler</h3>
+        <p>The tool walks every processor in every loaded flow and resolves which error-handler chain actually wraps it — including handlers inherited from a parent flow through a flow-ref call.</p>
+      </div>
+    </div>
+    <div class="callout">
+      <b>Trace a specific error type.</b> Query something like <span class="inline-code">HTTP:CONNECTIVITY</span> or <span class="inline-code">MULE:EXPRESSION</span> and the tool finds the exact catch block that would handle it — or tells you plainly that nothing does — plus a likely cause and fix for common error types.
+    </div>
+  </section>
+
+  <!-- BRANCH CALCULATOR -->
+  <section class="wrap">
+    <div class="node">05</div>
+    <div class="sec-head">
+      <span class="eyebrow">Core capability</span>
+      <h2 class="section-title">The Branch Calculator: complexity, dead code, and cost</h2>
+      <p class="lede" style="margin-left:auto;margin-right:auto">This is the analysis view built for the conversation after "does this flow work" — the one about maintainability and spend.</p>
+    </div>
+
+    <div class="card-row">
+      <div class="card" data-tag="Complexity + dead branches">
+        <h3>Cyclomatic complexity, computed automatically</h3>
+        <p>Every choice and scatter-gather block in a flow is located and used to compute cyclomatic complexity (M), giving a concrete maintainability signal instead of a gut feeling. Branches that can never be reached — a catch-all placed before a real condition, for example — are flagged as dead.</p>
+      </div>
+    </div>
+
+    <div class="sec-head" style="margin-top:8px;margin-bottom:18px">
+      <span class="eyebrow">Two pricing models</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Model</th><th>Estimates cost by</th><th>Best for</th></tr></thead>
+        <tbody>
+          <tr><td>CloudHub vCore-hours</td><td class="mono-cell">execution time × vCore rate</td><td>Compute-bound branches (transforms, loops, scopes)</td></tr>
+          <tr><td>Anypoint MQ pricing</td><td class="mono-cell">messages/day × per-message rate</td><td>Queue- and event-driven branches</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout callout-good" style="margin-top:22px">
+      <b>Plug in your own traffic.</b> Each branch ships with a default estimate, but the messages/day field is editable — enter your real volume and every branch's projected monthly cost recalculates live. Results export straight to CSV for a cost review or a capacity-planning doc.
+    </div>
+  </section>
+
+  <!-- UNDER THE HOOD -->
+  <section class="wrap">
+    <div class="node">06</div>
+    <div class="sec-head">
+      <span class="eyebrow">Under the hood</span>
+      <h2 class="section-title">One HTML file. No install, no server, no data leaving your machine</h2>
+    </div>
+    <div class="privacy-strip">
+      <span class="icon">🔒</span>
+      <p>Everything — XML parsing, diagram rendering, request tracing, cost math — runs client-side in plain JavaScript. Your flow XML, and whatever request payloads you paste in, never leave the browser tab. That makes it safe to point at client or production integration code without a second thought about where the file goes.</p>
+    </div>
+  </section>
+
+  <!-- HOW TO USE -->
+  <section class="wrap">
+    <div class="node">07</div>
+    <div class="sec-head">
+      <span class="eyebrow">Getting started</span>
+      <h2 class="section-title">From zero to a diagram in under a minute</h2>
+    </div>
+    <div class="steps">
+      <div class="step"><div class="step-num">1</div><div><h4>Open the tool</h4><p>It's a single HTML file — open it directly in any modern browser, no install required.</p></div></div>
+      <div class="step"><div class="step-num">2</div><div><h4>Drop in your XML</h4><p>Drag one or more MuleSoft XML files onto the upload zone, or select them manually.</p></div></div>
+      <div class="step"><div class="step-num">3</div><div><h4>Pick a flow</h4><p>Every flow and sub-flow found across your files shows up in the selector, with a live reference count.</p></div></div>
+      <div class="step"><div class="step-num">4</div><div><h4>Generate the diagram</h4><p>Render, expand or collapse sections, search, and export to SVG when you're ready to share it.</p></div></div>
+      <div class="step"><div class="step-num">5</div><div><h4>Go deeper</h4><p>Paste a cURL request to trace it, run Error Analysis for coverage, or open Analyze for complexity and cost.</p></div></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="wrap">
+  <span class="eyebrow">Mule Flow Visualizer</span>
+  <h2 class="section-title">One file. Every flow, readable.</h2>
+  <div class="footer-tags">
+    <span>MuleSoft</span><span>Anypoint Platform</span><span>DataWeave</span><span>Integration Tooling</span>
+  </div>
+  <div class="byline">Built by Satyam · Mule Flow Visualizer</div>
+</footer>
+
+</div>
+</body>
+</html>
